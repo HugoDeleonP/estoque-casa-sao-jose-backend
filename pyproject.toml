@@ -1,0 +1,64 @@
+[project]
+name = "estoque-doacoes"
+version = "0.1.0"
+description = "Backend do sistema de rastreabilidade de doações da Casa São José (Catálogo + Dashboard)"
+readme = "README.md"
+authors = [
+    { name = "Hugo Deleon" },
+    { name = "Guilherme Glüge" },
+    { name = "Luiz Pessoa" },
+]
+# Piso em 3.12: suporte de segurança até 2028, wheels prontos para todas as libs abaixo
+# (inclusive Windows 32/64 bits). Se a máquina da ONG tiver um Python mais antigo,
+# o uv baixa um Python 3.12 isolado — não depende do Python do sistema.
+requires-python = ">=3.12,<3.14"
+
+# Dependências de RUNTIME: só o que precisa existir na máquina da bancada.
+# Sem o extra [standard] do FastAPI de propósito (ver README: "Por que não fastapi[standard]").
+dependencies = [
+    "fastapi>=0.115,<1.0",
+    "uvicorn>=0.32,<1.0",           # servidor ASGI; sem [standard] → sem uvloop/httptools/watchfiles
+    "sqlalchemy>=2.0,<2.1",         # ORM 2.0 (tipado); SQLite já vem embutido no Python
+    "alembic>=1.14,<2.0",           # migrações versionadas do schema SQLite
+    "pydantic-settings>=2.6,<3.0",  # config via .env (caminho do .db, porta, etc.)
+]
+
+[project.optional-dependencies]
+# Autenticação/RBAC fica FORA do MVP; quando entrar, é só `uv sync --extra auth`.
+auth = [
+    "itsdangerous>=2.2",            # exigido pelo SessionMiddleware (cookie assinado)
+    "pwdlib[argon2]>=0.2",          # hash de senha mantido; substitui passlib (abandonado)
+    "python-multipart>=0.0.18",     # form de login (OAuth2PasswordRequestForm / Form())
+]
+
+[project.scripts]
+# `uv run estoque-doacoes` sobe o servidor (ver src/estoque_doacoes/__init__.py)
+estoque-doacoes = "estoque_doacoes:main"
+
+# Dependências só de DESENVOLVIMENTO (PEP 735). Não vão para a máquina da ONG
+# quando instalado com `uv sync --no-dev`.
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "httpx2>=2.13",                 # cliente do TestClient (Starlette 1.x deprecou o httpx clássico)
+    "ruff>=0.8",                    # lint + formatação (substitui flake8/black/isort)
+    "uvicorn[standard]>=0.32",      # no dev sim: watchfiles para --reload
+]
+
+[build-system]
+requires = ["uv_build>=0.11,<0.12"]
+build-backend = "uv_build"
+
+[tool.uv]
+default-groups = ["dev"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra -q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]

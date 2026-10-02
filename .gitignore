@@ -1,0 +1,38 @@
+# ─── Ambiente Python / uv ───────────────────────────────────────
+.venv/
+__pycache__/
+*.py[cod]
+# uv.lock NÃO entra aqui: ele é versionado (garante versões idênticas na equipe e na ONG)
+
+# ─── Configuração local (segredos) ──────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ─── Banco SQLite e backups ─────────────────────────────────────
+# Dados reais da ONG nunca vão para o Git (privacidade + arquivo binário que muda sempre)
+data/
+backups/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# ─── Empacotamento (PyInstaller / uv build) ─────────────────────
+# Artefatos gerados; o .spec do PyInstaller É código e deve ser versionado
+build/
+dist/
+*.egg-info/
+
+# ─── Ferramentas de teste e qualidade ───────────────────────────
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# ─── Logs ───────────────────────────────────────────────────────
+logs/
+*.log
