@@ -53,7 +53,7 @@ o que roda na bancada é byte a byte o que foi testado.
   `uvicorn[standard]` (com `--reload`) está só no grupo `dev`. *Implicação:* em produção o
   servidor usa asyncio/h11 puros — mais lento em benchmark, irrelevante para 1–3 usuários.
 - **Python `>=3.12,<3.14`** — teto evita que uma versão nova sem wheels quebre a instalação.
-- **SQLite com `foreign_keys=ON`, WAL e `busy_timeout`** (em `db.py`) — sem o PRAGMA, o
+- **SQLite com `foreign_keys=ON`, WAL e `busy_timeout`** (em `shared/database/db.py`) — sem o PRAGMA, o
   SQLite ignora FOREIGN KEY silenciosamente. WAL cria arquivos `estoque.db-wal`/`-shm` ao
   lado do banco: **backup = copiar com o servidor parado** (ou `sqlite3 estoque.db ".backup x.db"`).
 - **Alembic desde já** — o schema vai mudar (Usuário/Role pós-MVP, validade). SQLite não
@@ -62,3 +62,31 @@ o que roda na bancada é byte a byte o que foi testado.
   mantido desde 2020 e quebra com `bcrypt>=4.1`. *Implicação:* o doc de viabilidade cita
   `passlib`/bcrypt; atualizar a stack documentada.
 - **`httpx2` no dev** — o Starlette 1.x deprecou o `httpx` clássico no `TestClient`.
+
+## Estrutura do código
+
+Arquitetura modular: uma pasta por funcionalidade, todas com as mesmas camadas.
+
+```
+src/estoque_doacoes/
+├── main.py                 # cria o app, registra routers e o handler global de erros
+├── migrar.py               # aplica migrações do Alembic ao subir
+├── migrations/             # scripts do Alembic (env.py importa a entidade de cada módulo)
+├── shared/                 # usado por vários módulos; NÃO importa módulos de negócio
+│   ├── database/           # config.py (settings/.env), db.py (engine, Base, get_session, agora)
+│   ├── exception/          # Erros.py, ErroDTO.py, GlobalExceptionHandler.py (@RestControllerAdvice)
+│   └── validation/         # tipos.py (CodigoBarras)
+├── categoria/
+│   ├── domain/
+│   │   ├── entity/         # Categoria.py
+│   │   └── exception/      # CategoriaDuplicada, CategoriaEmUso, CategoriaNaoEncontrada
+│   ├── controller/         # CategoriaController.py
+│   ├── dto/                # CategoriaDTO.py
+│   ├── repository/         # CategoriaRepository.py
+│   └── service/            # CategoriaService.py
+├── produto/                # mesmo padrão (domain/entity, domain/exception, controller, …)
+└── movimentacao/           # mesmo padrão + domain/enum/TipoMovimentacao.py
+```
+
+Módulo novo com tabela → criar a pasta no mesmo padrão, registrar o router no `main.py` e
+importar a entidade no `migrations/env.py`.

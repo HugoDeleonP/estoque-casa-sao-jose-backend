@@ -4,7 +4,7 @@
 def main() -> None:
     import uvicorn
 
-    from estoque_doacoes.config import settings
+    from estoque_doacoes.shared.database.config import settings
 
     uvicorn.run(
         "estoque_doacoes.main:app",
