@@ -15,5 +15,7 @@ fi
 export ESTOQUE_FRONT_DIST="$FRONT_DIST" ESTOQUE_DEBUG=false ESTOQUE_COOKIE_SECURE=false
 uv sync --frozen --no-dev --inexact  # não remove ferramentas de dev já instaladas
 uv run --no-dev python -m estoque_doacoes.scripts.seed
-echo "Abra http://127.0.0.1:${ESTOQUE_PORT:-8000}"
+# Porta real: variável de ambiente, senão o .env, senão 8000
+PORTA="$(uv run --no-dev python -c 'from estoque_doacoes.shared.database.config import settings; print(settings.port)')"
+echo "Abra http://127.0.0.1:$PORTA"
 exec uv run --no-dev estoque-doacoes
