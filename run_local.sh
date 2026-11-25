@@ -13,7 +13,7 @@ if [ ! -f "$FRONT_DIST/index.html" ]; then
   exit 1
 fi
 export ESTOQUE_FRONT_DIST="$FRONT_DIST" ESTOQUE_DEBUG=false ESTOQUE_COOKIE_SECURE=false
-uv sync --frozen --no-dev
+uv sync --frozen --no-dev --inexact  # não remove ferramentas de dev já instaladas
 uv run --no-dev python -m estoque_doacoes.scripts.seed
 echo "Abra http://127.0.0.1:${ESTOQUE_PORT:-8000}"
 exec uv run --no-dev estoque-doacoes
