@@ -17,7 +17,7 @@ class MovimentacaoRepository:
         stmt = (
             select(Movimentacao)
             .where(Movimentacao.id == movimentacao_id)
-            .options(joinedload(Movimentacao.produto))
+            .options(joinedload(Movimentacao.produto), joinedload(Movimentacao.autor))
         )
         return self.session.scalar(stmt)
 
@@ -31,7 +31,7 @@ class MovimentacaoRepository:
         """Histórico mais recente primeiro. Inclui movimentações de produtos excluídos."""
         stmt = (
             select(Movimentacao)
-            .options(joinedload(Movimentacao.produto))
+            .options(joinedload(Movimentacao.produto), joinedload(Movimentacao.autor))
             .order_by(Movimentacao.created_at.desc(), Movimentacao.id.desc())
             .limit(limite)
         )

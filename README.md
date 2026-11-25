@@ -1,6 +1,23 @@
 # Backend — Estoque de Doações (Casa São José)
 
+API do sistema de gestão e rastreabilidade de doações da Casa São José: voluntários bipam as
+embalagens na bancada, cada leitura vira uma movimentação imutável e o voluntário chefe
+acompanha os indicadores no dashboard. Login com perfis ADMIN/COMUM, unidades de medida
+configuráveis e implantação numa EC2 com SQLite.
+
 FastAPI + SQLAlchemy 2.0 + SQLite, gerenciado com **[uv](https://docs.astral.sh/uv/)**.
+Front: [estoque-casa-sao-jose-front](https://github.com/HugoDeleonP/estoque-casa-sao-jose-front).
+
+## Documentação
+
+| Documento | Conteúdo |
+| --- | --- |
+| [docs/arquitetura.md](docs/arquitetura.md) | Visão geral, stack, decisões e diagrama |
+| [docs/modelo-de-dados.md](docs/modelo-de-dados.md) | Entidades, regras, diagramas de classes e ER |
+| [docs/api.md](docs/api.md) | Endpoints, permissões por perfil, exemplos (Swagger em `/docs`) |
+| [docs/deploy-aws.md](docs/deploy-aws.md) | Console AWS passo a passo, atualização, backup e restauração |
+| [docs/manual-do-usuario.md](docs/manual-do-usuario.md) | Guia para voluntários e voluntário chefe |
+| [docs/melhorias-futuras.md](docs/melhorias-futuras.md) | Lotes e validade, backup externo, domínio próprio… |
 
 ## Setup (uma vez por máquina)
 
@@ -10,10 +27,15 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 # Windows (PowerShell)
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 
-cd backend
+cd estoque-casa-sao-jose-backend
 cp .env.example .env      # Windows: copy .env.example .env
 uv sync                   # cria .venv, baixa Python 3.12 se preciso, instala tudo do uv.lock
+uv run python -m estoque_doacoes.scripts.seed        # migrações + unidades e categorias iniciais
+uv run python -m estoque_doacoes.scripts.criar_admin --nome "Seu Nome" --email voce@exemplo.org
 ```
+
+O `criar_admin` pede a senha no terminal (nunca por argumento). Os demais usuários são
+criados pela tela **Usuários**.
 
 ## Dia a dia
 
@@ -21,25 +43,35 @@ uv sync                   # cria .venv, baixa Python 3.12 se preciso, instala tu
 | --- | --- |
 | Subir a API (reload ligado se `ESTOQUE_DEBUG=true`) | `uv run estoque-doacoes` |
 | Swagger | http://127.0.0.1:8000/docs |
-| Testes | `uv run pytest` |
+| Testes da API | `uv run pytest` |
+| Teste ponta a ponta (leitor simulado) | no front: `npm run build && npm run test:e2e` |
+| Sistema completo local (plano B) | `./run_local.sh` → http://127.0.0.1:8000 |
 | Lint / formatação | `uv run ruff check . --fix` · `uv run ruff format .` |
 | Adicionar lib de runtime | `uv add <pacote>` |
 | Adicionar lib só de dev | `uv add --dev <pacote>` |
-| Ligar autenticação (pós-MVP) | `uv sync --extra auth` |
+| Atualizar o lock de produção | `uv export --no-dev --frozen --no-emit-project -o requirements.lock` |
 
 **Regra da equipe:** nunca `pip install` dentro do `.venv`. Sempre `uv add` — senão o
 `pyproject.toml`/`uv.lock` não registram a dependência e a máquina do colega quebra.
 `uv.lock` **vai para o Git**; `.venv/` e `.env` não.
 
-## Instalação na máquina da ONG
+## Configuração (variáveis `ESTOQUE_*`)
 
-```bash
-uv sync --no-dev --frozen   # só runtime (~22 pacotes, ~30 MB), versões exatas do lock
-uv run estoque-doacoes
-```
+| Variável | Padrão | Para quê |
+| --- | --- | --- |
+| `ESTOQUE_DB_PATH` | `data/estoque.db` | Arquivo SQLite |
+| `ESTOQUE_SECRET_KEY` | aleatória por processo | Assina o cookie de sessão. **Obrigatória em produção** (gerada pelo `user-data.sh`) |
+| `ESTOQUE_COOKIE_SECURE` | `false` | `true` em produção (HTTPS) |
+| `ESTOQUE_SESSAO_HORAS` | `12` | Validade da sessão |
+| `ESTOQUE_BCRYPT_ROUNDS` | `12` | Custo do hash de senha |
+| `ESTOQUE_FRONT_DIST` | — | Pasta do build do front a servir pela API (dev/plano B) |
+| `ESTOQUE_HOST` / `ESTOQUE_PORT` / `ESTOQUE_DEBUG` | `127.0.0.1` / `8000` / `false` | Servidor |
 
-`--frozen` falha se o lock estiver desatualizado em vez de resolver versões novas na hora —
-o que roda na bancada é byte a byte o que foi testado.
+## Produção
+
+AWS EC2 `t3.micro` (`sa-east-1`) com SQLite no disco, Caddy (HTTPS automático via
+sslip.io) e backup diário — ver [docs/deploy-aws.md](docs/deploy-aws.md). A instância
+instala as dependências de `requirements.lock` (versões e hashes exatos) sem resolver nada.
 
 ## Decisões e implicações
 
@@ -58,9 +90,8 @@ o que roda na bancada é byte a byte o que foi testado.
   lado do banco: **backup = copiar com o servidor parado** (ou `sqlite3 estoque.db ".backup x.db"`).
 - **Alembic desde já** — o schema vai mudar (Usuário/Role pós-MVP, validade). SQLite não
   suporta a maioria dos `ALTER TABLE`; o Alembic precisa de `render_as_batch=True` no `env.py`.
-- **Auth como extra opcional, com `pwdlib[argon2]` em vez de `passlib`** — o `passlib` não é
-  mantido desde 2020 e quebra com `bcrypt>=4.1`. *Implicação:* o doc de viabilidade cita
-  `passlib`/bcrypt; atualizar a stack documentada.
+- **`bcrypt` direto, sem `passlib`** — o `passlib` não é mantido desde 2020 e quebra com
+  `bcrypt>=4.1`. Sessão em cookie assinado (`itsdangerous`, via `SessionMiddleware`).
 - **`httpx2` no dev** — o Starlette 1.x deprecou o `httpx` clássico no `TestClient`.
 
 ## Estrutura do código
@@ -69,8 +100,12 @@ Arquitetura modular: uma pasta por funcionalidade, todas com as mesmas camadas.
 
 ```
 src/estoque_doacoes/
-├── main.py                 # cria o app, registra routers e o handler global de erros
+├── main.py                 # cria o app, sessão, routers e o handler global de erros
 ├── migrar.py               # aplica migrações do Alembic ao subir
+├── seed.py                 # dados iniciais idempotentes (unidades, categorias)
+├── scripts/                # criar_admin (primeiro ADMIN), seed
+├── auth/                   # login/logout/me, usuario_atual, require_role, bcrypt
+├── usuario/  unidade/  dashboard/   # mesmo padrão de camadas
 ├── migrations/             # scripts do Alembic (env.py importa a entidade de cada módulo)
 ├── shared/                 # usado por vários módulos; NÃO importa módulos de negócio
 │   ├── database/           # config.py (settings/.env), db.py (engine, Base, get_session, agora)

@@ -8,9 +8,7 @@ from sqlalchemy import Connection
 
 # Importar todas as entidades registra suas tabelas no metadata (create_all/autogenerate).
 # Módulo novo com tabela → adicionar aqui.
-import estoque_doacoes.categoria.domain.entity.Categoria  # noqa: F401
-import estoque_doacoes.movimentacao.domain.entity.Movimentacao  # noqa: F401
-import estoque_doacoes.produto.domain.entity.Produto  # noqa: F401
+import estoque_doacoes.entidades  # noqa: F401
 from estoque_doacoes.shared.database.db import Base, engine
 
 config = context.config

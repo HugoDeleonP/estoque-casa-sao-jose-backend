@@ -1,12 +1,14 @@
 """Camada HTTP de Movimentação: recebe, valida (schema), delega ao service e devolve.
 
-Sem PUT/DELETE: imutável após criada. Correção = nova movimentação do tipo AJUSTE."""
+Sem PUT/DELETE: imutável após criada. Correção = nova movimentação do tipo AJUSTE.
+Todos os perfis registram ENTRADA, SAÍDA e AJUSTE (D8); o autor fica em `created_by`."""
 
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
+from estoque_doacoes.auth.dependencies import Autenticado, UsuarioAtual
 from estoque_doacoes.movimentacao.domain.enum.TipoMovimentacao import TipoMovimentacao
 from estoque_doacoes.movimentacao.dto.MovimentacaoDTO import (
     MovimentacaoCreate,
@@ -16,7 +18,7 @@ from estoque_doacoes.movimentacao.dto.MovimentacaoDTO import (
 from estoque_doacoes.movimentacao.service.MovimentacaoService import MovimentacaoService
 from estoque_doacoes.shared.database.db import get_session
 
-router = APIRouter(prefix="/api/movimentacoes", tags=["movimentações"])
+router = APIRouter(prefix="/api/movimentacoes", tags=["movimentações"], dependencies=[Autenticado])
 
 
 def get_service(session: Annotated[Session, Depends(get_session)]) -> MovimentacaoService:
@@ -44,5 +46,5 @@ def buscar(movimentacao_id: int, service: Service):
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=MovimentacaoRegistrada)
-def registrar(dados: MovimentacaoCreate, service: Service):
-    return service.registrar(dados)
+def registrar(dados: MovimentacaoCreate, service: Service, autor: UsuarioAtual):
+    return service.registrar(dados, autor)

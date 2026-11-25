@@ -13,6 +13,7 @@ from estoque_doacoes.movimentacao.dto.MovimentacaoDTO import (
 from estoque_doacoes.movimentacao.repository.MovimentacaoRepository import MovimentacaoRepository
 from estoque_doacoes.produto.domain.exception.ProdutoNaoEncontrado import ProdutoNaoEncontrado
 from estoque_doacoes.produto.repository.ProdutoRepository import ProdutoRepository
+from estoque_doacoes.usuario.domain.entity.Usuario import Usuario
 
 
 class MovimentacaoService:
@@ -42,7 +43,9 @@ class MovimentacaoService:
             raise MovimentacaoNaoEncontrada(movimentacao_id)
         return self._para_saida(mov)
 
-    def registrar(self, dados: MovimentacaoCreate) -> MovimentacaoRegistrada:
+    def registrar(
+        self, dados: MovimentacaoCreate, autor: Usuario | None = None
+    ) -> MovimentacaoRegistrada:
         # Só produto ATIVO recebe movimentação
         produto = self.produtos.por_id(dados.produto_id)
         if produto is None:
@@ -53,6 +56,7 @@ class MovimentacaoService:
             tipo=dados.tipo,
             quantidade=dados.quantidade,
             observacao=dados.observacao,
+            autor=autor,
         )
         self.movimentacoes.adicionar(mov)
         self.session.flush()  # envia o INSERT (dentro da transação) para o SUM enxergá-lo
@@ -75,4 +79,5 @@ class MovimentacaoService:
             quantidade=mov.quantidade,
             observacao=mov.observacao,
             created_at=mov.created_at,
+            usuario_nome=mov.autor.nome if mov.autor else None,
         )

@@ -12,7 +12,14 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from estoque_doacoes.shared.exception.ErroDTO import CampoInvalido, ErroResposta
-from estoque_doacoes.shared.exception.Erros import Conflito, ErroDominio, NaoEncontrado
+from estoque_doacoes.shared.exception.Erros import (
+    Conflito,
+    DadosInvalidos,
+    ErroDominio,
+    NaoAutenticado,
+    NaoEncontrado,
+    SemPermissao,
+)
 
 log = logging.getLogger(__name__)
 
@@ -24,6 +31,9 @@ class GlobalExceptionHandler:
         # (igual ao Spring): NaoEncontrado vence ErroDominio, que vence Exception.
         app.add_exception_handler(NaoEncontrado, cls.nao_encontrado)
         app.add_exception_handler(Conflito, cls.conflito)
+        app.add_exception_handler(DadosInvalidos, cls.dados_invalidos)
+        app.add_exception_handler(NaoAutenticado, cls.nao_autenticado)
+        app.add_exception_handler(SemPermissao, cls.sem_permissao)
         app.add_exception_handler(ErroDominio, cls.erro_dominio)
         app.add_exception_handler(RequestValidationError, cls.validacao)
         app.add_exception_handler(Exception, cls.erro_inesperado)
@@ -35,6 +45,18 @@ class GlobalExceptionHandler:
     @staticmethod
     def conflito(request: Request, exc: Conflito) -> JSONResponse:
         return _resposta(request, status.HTTP_409_CONFLICT, str(exc))
+
+    @staticmethod
+    def dados_invalidos(request: Request, exc: DadosInvalidos) -> JSONResponse:
+        return _resposta(request, status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc))
+
+    @staticmethod
+    def nao_autenticado(request: Request, exc: NaoAutenticado) -> JSONResponse:
+        return _resposta(request, status.HTTP_401_UNAUTHORIZED, str(exc))
+
+    @staticmethod
+    def sem_permissao(request: Request, exc: SemPermissao) -> JSONResponse:
+        return _resposta(request, status.HTTP_403_FORBIDDEN, str(exc))
 
     @staticmethod
     def erro_dominio(request: Request, exc: ErroDominio) -> JSONResponse:
