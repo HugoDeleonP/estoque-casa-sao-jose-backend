@@ -11,6 +11,7 @@ from estoque_doacoes.shared.database.db import Base, DataHoraUTC, agora
 
 if TYPE_CHECKING:
     from estoque_doacoes.produto.domain.entity.Produto import Produto
+    from estoque_doacoes.usuario.domain.entity.Usuario import Usuario
 
 
 class Movimentacao(Base):
@@ -29,9 +30,13 @@ class Movimentacao(Base):
     observacao: Mapped[str | None] = mapped_column(String(200), default=None)
     # Indexado: o dashboard filtra por período
     created_at: Mapped[datetime] = mapped_column(DataHoraUTC, default=agora, index=True)
+    # Rastreabilidade: quem bipou/ajustou. Nullable só por causa de registros anteriores
+    # à autenticação; toda movimentação nova grava o autor.
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("usuario.id"), default=None)
 
     # Unidirecional (@ManyToOne)
     produto: Mapped[Produto] = relationship()
+    autor: Mapped[Usuario | None] = relationship()
 
     __table_args__ = (
         # Regra no BANCO, não só na API: protege contra bug no service ou script manual.

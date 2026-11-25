@@ -1,5 +1,7 @@
 """Aplicação FastAPI."""
 
+import logging
+import secrets
 from contextlib import asynccontextmanager
 from typing import Annotated
 
@@ -7,8 +9,11 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+from starlette.middleware.sessions import SessionMiddleware
 
+from estoque_doacoes.auth.controller.AuthController import router as auth_router
 from estoque_doacoes.categoria.controller.CategoriaController import router as categoria_router
+from estoque_doacoes.dashboard.controller.DashboardController import router as dashboard_router
 from estoque_doacoes.migrar import migrar
 from estoque_doacoes.movimentacao.controller.MovimentacaoController import (
     router as movimentacao_router,
@@ -17,6 +22,10 @@ from estoque_doacoes.produto.controller.ProdutoController import router as produ
 from estoque_doacoes.shared.database.config import settings
 from estoque_doacoes.shared.database.db import get_session
 from estoque_doacoes.shared.exception.GlobalExceptionHandler import GlobalExceptionHandler
+from estoque_doacoes.unidade.controller.UnidadeController import router as unidade_router
+from estoque_doacoes.usuario.controller.UsuarioController import router as usuario_router
+
+log = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -29,12 +38,31 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title="Estoque de Doações — Casa São José",
-    version="0.1.0",
+    version="2.0.0",
     lifespan=lifespan,
 )
+
+if settings.secret_key is None:
+    log.warning("ESTOQUE_SECRET_KEY ausente: usando chave temporária (sessões caem ao reiniciar)")
+
+# Sessão em cookie ASSINADO (itsdangerous): o navegador não consegue forjá-lo.
+# HttpOnly sempre; Secure em produção (HTTPS); SameSite=Lax barra CSRF entre sites.
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.secret_key or secrets.token_urlsafe(32),
+    session_cookie="csj_sessao",
+    max_age=settings.sessao_horas * 3600,
+    same_site="lax",
+    https_only=settings.cookie_secure,
+)
+
+app.include_router(auth_router)
+app.include_router(usuario_router)
 app.include_router(categoria_router)
+app.include_router(unidade_router)
 app.include_router(produto_router)
 app.include_router(movimentacao_router)
+app.include_router(dashboard_router)
 
 GlobalExceptionHandler.registrar(app)
 

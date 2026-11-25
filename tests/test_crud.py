@@ -9,11 +9,16 @@ def _categoria(client: TestClient, nome: str = "Alimentos") -> int:
     return r.json()["id"]
 
 
+def unidade_id(client: TestClient, sigla: str) -> int:
+    return next(u["id"] for u in client.get("/api/unidades").json() if u["sigla"] == sigla)
+
+
 def _produto(client: TestClient, categoria_id: int, **campos) -> dict:
     dados = {
         "codigo_barras": ARROZ,
         "nome": "Arroz",
-        "unidade": "1 kg",
+        "conteudo_valor": 1,
+        "unidade_medida_id": unidade_id(client, "kg"),
         "categoria_id": categoria_id,
     }
     r = client.post("/api/produtos", json=dados | campos)
@@ -84,13 +89,16 @@ def test_produto_crud(client: TestClient) -> None:
         json={
             "codigo_barras": ARROZ,
             "nome": "Arroz integral",
-            "unidade": "5 kg",
+            "conteudo_valor": 5,
+            "unidade_medida_id": unidade_id(client, "kg"),
             "categoria_id": outra,
         },
     )
     assert r.status_code == 200
     atualizado = r.json()
     assert atualizado["nome"] == "Arroz integral"
+    assert atualizado["conteudo_valor"] == 5
+    assert atualizado["unidade_medida"]["sigla"] == "kg"
     assert atualizado["marca"] is None  # PUT substitui: campo omitido vira vazio
     assert atualizado["categoria"]["nome"] == "Grãos"
     assert atualizado["created_at"] == criado["created_at"]
@@ -108,14 +116,20 @@ def test_produto_crud(client: TestClient) -> None:
 def test_produto_sem_codigo_de_barras(client: TestClient) -> None:
     cid = _categoria(client)
     # "" vindo de formulário vira None; vários produtos podem ficar sem código
-    a = _produto(client, cid, codigo_barras="", nome="Feijão a granel", unidade="", marca="  ")
+    a = _produto(client, cid, codigo_barras="", nome="Feijão a granel", marca="  ")
     b = _produto(client, cid, codigo_barras=None, nome="Fubá a granel")
-    assert a["codigo_barras"] is None and a["unidade"] is None and a["marca"] is None
+    assert a["codigo_barras"] is None and a["marca"] is None
     assert b["codigo_barras"] is None
     # Depois ganha um código
     r = client.put(
         f"/api/produtos/{a['id']}",
-        json={"codigo_barras": ARROZ, "nome": "Feijão", "categoria_id": cid},
+        json={
+            "codigo_barras": ARROZ,
+            "nome": "Feijão",
+            "conteudo_valor": 1,
+            "unidade_medida_id": unidade_id(client, "kg"),
+            "categoria_id": cid,
+        },
     )
     assert r.json()["codigo_barras"] == ARROZ
 
@@ -124,14 +138,24 @@ def test_produto_erros(client: TestClient) -> None:
     cid = _categoria(client)
     assert client.get(f"/api/produtos/codigo/{ARROZ}").status_code == 404
     pid = _produto(client, cid)["id"]
-    dup = {"codigo_barras": ARROZ, "nome": "Outro", "categoria_id": cid}
+    kg = unidade_id(client, "kg")
+    dup = {
+        "codigo_barras": ARROZ,
+        "nome": "Outro",
+        "conteudo_valor": 1,
+        "unidade_medida_id": kg,
+        "categoria_id": cid,
+    }
     assert client.post("/api/produtos", json=dup).status_code == 409
     # Trocar para o código de OUTRO produto ativo também é conflito
     outro = _produto(client, cid, codigo_barras="12345678", nome="Leite")["id"]
     r = client.put(f"/api/produtos/{outro}", json=dup)
     assert r.status_code == 409
 
-    r = client.put(f"/api/produtos/{pid}", json={"nome": "Arroz", "categoria_id": 999})
+    r = client.put(
+        f"/api/produtos/{pid}",
+        json={"nome": "Arroz", "conteudo_valor": 1, "unidade_medida_id": kg, "categoria_id": 999},
+    )
     assert r.status_code == 404
 
     r = client.get("/api/produtos/codigo/abc")
@@ -203,3 +227,34 @@ def test_movimentacao_regras_de_quantidade(client: TestClient) -> None:
     # Imutável: não existe PUT/DELETE
     assert client.delete("/api/movimentacoes/1").status_code == 405
     assert client.put("/api/movimentacoes/1", json={}).status_code == 405
+
+
+# ---------- Reativação (RF08 / RN09) ----------
+
+
+def test_reativacao(client: TestClient, comum: TestClient) -> None:
+    cid = _categoria(client)
+    p = _produto(client, cid)
+    _mov(client, p["id"], "ENTRADA", 2)
+    _mov(client, p["id"], "SAIDA", -2)
+    assert client.delete(f"/api/produtos/{p['id']}").status_code == 204
+
+    # A bancada (qualquer perfil) descobre o excluído pelo código
+    r = comum.get(f"/api/produtos/excluidos/codigo/{ARROZ}")
+    assert r.status_code == 200 and r.json()["id"] == p["id"] and r.json()["deleted_at"]
+    assert comum.post(f"/api/produtos/{p['id']}/reativar").status_code == 403
+
+    r = client.post(f"/api/produtos/{p['id']}/reativar")
+    assert r.status_code == 200
+    assert client.get(f"/api/produtos/codigo/{ARROZ}").json()["id"] == p["id"]
+    assert client.get(f"/api/produtos/excluidos/codigo/{ARROZ}").status_code == 404
+    # já ativo → não há o que reativar
+    assert client.post(f"/api/produtos/{p['id']}/reativar").status_code == 404
+
+
+def test_reativacao_com_codigo_em_uso(client: TestClient) -> None:
+    cid = _categoria(client)
+    antigo = _produto(client, cid)
+    client.delete(f"/api/produtos/{antigo['id']}")
+    _produto(client, cid, nome="Arroz novo")  # mesmo código, recadastrado
+    assert client.post(f"/api/produtos/{antigo['id']}/reativar").status_code == 409

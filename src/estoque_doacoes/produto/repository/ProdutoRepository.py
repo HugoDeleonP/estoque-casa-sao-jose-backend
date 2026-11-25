@@ -16,7 +16,8 @@ class ProdutoRepository:
         return (
             select(Produto)
             .where(Produto.deleted_at.is_(None))
-            .options(joinedload(Produto.categoria))  # evita N+1 ao serializar a categoria
+            # evita N+1 ao serializar categoria e unidade
+            .options(joinedload(Produto.categoria), joinedload(Produto.unidade_medida))
         )
 
     def por_id(self, produto_id: int) -> Produto | None:
@@ -32,9 +33,31 @@ class ProdutoRepository:
             stmt = stmt.where(Produto.categoria_id == categoria_id)
         return list(self.session.scalars(stmt))
 
+    def excluido_por_id(self, produto_id: int) -> Produto | None:
+        stmt = (
+            select(Produto)
+            .where(Produto.id == produto_id, Produto.deleted_at.is_not(None))
+            .options(joinedload(Produto.categoria), joinedload(Produto.unidade_medida))
+        )
+        return self.session.scalar(stmt)
+
+    def excluido_por_codigo(self, codigo: str) -> Produto | None:
+        """O excluído mais recente com o código (pode haver vários ao longo do tempo)."""
+        stmt = (
+            select(Produto)
+            .where(Produto.codigo_barras == codigo, Produto.deleted_at.is_not(None))
+            .options(joinedload(Produto.categoria), joinedload(Produto.unidade_medida))
+            .order_by(Produto.deleted_at.desc())
+            .limit(1)
+        )
+        return self.session.scalar(stmt)
+
     def adicionar(self, produto: Produto) -> None:
         self.session.add(produto)
 
     def excluir(self, produto: Produto) -> None:
         """Soft delete: preserva o histórico de movimentações do produto."""
         produto.deleted_at = agora()
+
+    def reativar(self, produto: Produto) -> None:
+        produto.deleted_at = None

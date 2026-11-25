@@ -10,8 +10,13 @@ from estoque_doacoes.produto.domain.entity.Produto import Produto
 from estoque_doacoes.produto.domain.exception.CodigoDuplicado import CodigoDuplicado
 from estoque_doacoes.produto.domain.exception.ProdutoComSaldo import ProdutoComSaldo
 from estoque_doacoes.produto.domain.exception.ProdutoNaoEncontrado import ProdutoNaoEncontrado
-from estoque_doacoes.produto.dto.ProdutoDTO import ProdutoIn, ProdutoOut
+from estoque_doacoes.produto.dto.ProdutoDTO import ProdutoExcluidoOut, ProdutoIn, ProdutoOut
 from estoque_doacoes.produto.repository.ProdutoRepository import ProdutoRepository
+from estoque_doacoes.shared.exception.Erros import DadosInvalidos
+from estoque_doacoes.unidade.domain.entity.UnidadeMedida import UnidadeMedida
+from estoque_doacoes.unidade.dto.UnidadeDTO import UnidadeResumo
+from estoque_doacoes.unidade.repository.UnidadeRepository import UnidadeRepository
+from estoque_doacoes.usuario.domain.entity.Usuario import Usuario
 
 
 class ProdutoService:
@@ -21,6 +26,7 @@ class ProdutoService:
         self.session = session
         self.produtos = ProdutoRepository(session)
         self.categorias = CategoriaRepository(session)
+        self.unidades = UnidadeRepository(session)
         self.movimentacoes = MovimentacaoRepository(session)  # só leitura: saldo em lote
 
     def listar(self, categoria_id: int | None = None) -> list[ProdutoOut]:
@@ -38,8 +44,31 @@ class ProdutoService:
             raise ProdutoNaoEncontrado.por_codigo(codigo)
         return self._para_saida(produto, produto.saldo())
 
-    def cadastrar(self, dados: ProdutoIn) -> ProdutoOut:
-        produto = Produto(categoria=self._categoria(dados.categoria_id))
+    def buscar_excluido_por_codigo(self, codigo: str) -> ProdutoExcluidoOut:
+        produto = self.produtos.excluido_por_codigo(codigo)
+        if produto is None:
+            raise ProdutoNaoEncontrado(f"Nenhum produto excluído com código {codigo}")
+        return ProdutoExcluidoOut(
+            **self._para_saida(produto, produto.saldo()).model_dump(),
+            deleted_at=produto.deleted_at,
+        )
+
+    def reativar(self, produto_id: int) -> ProdutoOut:
+        """Desfaz o soft delete (RF08). 409 se outro produto ativo já usa o código."""
+        produto = self.produtos.excluido_por_id(produto_id)
+        if produto is None:
+            raise ProdutoNaoEncontrado(f"Produto {produto_id} não está excluído")
+        if produto.codigo_barras and self.produtos.por_codigo(produto.codigo_barras):
+            raise CodigoDuplicado(produto.codigo_barras)
+        self.produtos.reativar(produto)
+        self._commit(produto.codigo_barras)
+        return self._para_saida(produto, produto.saldo())
+
+    def cadastrar(self, dados: ProdutoIn, autor: Usuario | None = None) -> ProdutoOut:
+        produto = Produto(
+            categoria=self._categoria(dados.categoria_id),
+            created_by=autor.id if autor else None,
+        )
         self._preencher(produto, dados)
         self.produtos.adicionar(produto)
         self._commit(dados.codigo_barras)
@@ -75,6 +104,13 @@ class ProdutoService:
             raise CategoriaNaoEncontrada(categoria_id)
         return categoria
 
+    def _unidade(self, unidade_id: int) -> UnidadeMedida:
+        unidade = self.unidades.por_id(unidade_id)
+        if unidade is None:
+            # 422, não 404: é um valor inválido no corpo da requisição (F1.2)
+            raise DadosInvalidos(f"Unidade de medida {unidade_id} não existe ou foi excluída")
+        return unidade
+
     def _preencher(self, produto: Produto, dados: ProdutoIn) -> None:
         # Checagem amigável (mensagem clara no caso comum)...
         if dados.codigo_barras is not None:
@@ -84,7 +120,8 @@ class ProdutoService:
         produto.codigo_barras = dados.codigo_barras
         produto.nome = dados.nome
         produto.marca = dados.marca
-        produto.unidade = dados.unidade
+        produto.conteudo_valor = dados.conteudo_valor
+        produto.unidade_medida = self._unidade(dados.unidade_medida_id)
 
     def _commit(self, codigo: str | None) -> None:
         try:
@@ -102,7 +139,8 @@ class ProdutoService:
             codigo_barras=produto.codigo_barras,
             nome=produto.nome,
             marca=produto.marca,
-            unidade=produto.unidade,
+            conteudo_valor=produto.conteudo_valor,
+            unidade_medida=UnidadeResumo.model_validate(produto.unidade_medida),
             categoria=CategoriaOut.model_validate(produto.categoria),
             saldo=saldo,
             created_at=produto.created_at,

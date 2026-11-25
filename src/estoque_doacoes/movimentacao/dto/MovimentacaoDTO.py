@@ -43,6 +43,7 @@ class MovimentacaoOut(BaseModel):
     quantidade: int
     observacao: str | None
     created_at: datetime
+    usuario_nome: str | None  # autor (None em registros anteriores ao login)
 
 
 class MovimentacaoRegistrada(MovimentacaoOut):

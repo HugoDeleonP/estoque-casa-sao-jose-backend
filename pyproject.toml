@@ -21,14 +21,9 @@ dependencies = [
     "sqlalchemy>=2.0,<2.1",         # ORM 2.0 (tipado); SQLite já vem embutido no Python
     "alembic>=1.14,<2.0",           # migrações versionadas do schema SQLite
     "pydantic-settings>=2.6,<3.0",  # config via .env (caminho do .db, porta, etc.)
-]
-
-[project.optional-dependencies]
-# Autenticação/RBAC fica FORA do MVP; quando entrar, é só `uv sync --extra auth`.
-auth = [
-    "itsdangerous>=2.2",            # exigido pelo SessionMiddleware (cookie assinado)
-    "pwdlib[argon2]>=0.2",          # hash de senha mantido; substitui passlib (abandonado)
-    "python-multipart>=0.0.18",     # form de login (OAuth2PasswordRequestForm / Form())
+    "bcrypt>=4.2,<6.0",             # hash de senha, usado direto (sem passlib, abandonado)
+    "itsdangerous>=2.2,<3.0",       # assinatura do cookie de sessão (SessionMiddleware)
+    "tzdata>=2024.1",               # fuso America/Sao_Paulo mesmo sem tzdata no sistema
 ]
 
 [project.scripts]
@@ -54,6 +49,7 @@ default-groups = ["dev"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 addopts = "-ra -q"
 
 [tool.ruff]
