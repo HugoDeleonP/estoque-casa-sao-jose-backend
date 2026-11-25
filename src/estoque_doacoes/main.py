@@ -3,7 +3,8 @@
 from contextlib import asynccontextmanager
 from typing import Annotated
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -13,6 +14,7 @@ from estoque_doacoes.movimentacao.controller.MovimentacaoController import (
     router as movimentacao_router,
 )
 from estoque_doacoes.produto.controller.ProdutoController import router as produto_router
+from estoque_doacoes.shared.database.config import settings
 from estoque_doacoes.shared.database.db import get_session
 from estoque_doacoes.shared.exception.GlobalExceptionHandler import GlobalExceptionHandler
 
@@ -48,7 +50,17 @@ def health(session: SessionDep) -> dict:
     return {"status": "ok", "db": {"foreign_keys": bool(fk), "journal_mode": journal}}
 
 
-# Quando o build do Vue existir (frontend/dist), ele será servido daqui:
-#   from fastapi.staticfiles import StaticFiles
-#   app.mount("/", StaticFiles(directory=..., html=True), name="spa")
-# Montado POR ÚLTIMO, depois de todas as rotas /api, senão ele as "engole".
+# Build do Vue (ESTOQUE_FRONT_DIST) servido pela mesma origem: sem CORS, um processo só.
+# Registrado POR ÚLTIMO, depois de todas as rotas /api, senão ele as "engole".
+if settings.front_dist is not None and (settings.front_dist / "index.html").is_file():
+    FRONT_DIST = settings.front_dist.resolve()
+
+    @app.get("/{caminho:path}", include_in_schema=False)
+    def spa(caminho: str) -> FileResponse:
+        if caminho == "api" or caminho.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Rota não encontrada")
+        arquivo = (FRONT_DIST / caminho).resolve()
+        if arquivo.is_file() and arquivo.is_relative_to(FRONT_DIST):
+            return FileResponse(arquivo)
+        # Rotas do vue-router (createWebHistory): /bancada, /catalogo… → index.html
+        return FileResponse(FRONT_DIST / "index.html")
